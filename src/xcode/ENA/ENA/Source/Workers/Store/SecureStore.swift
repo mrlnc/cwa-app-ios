@@ -45,6 +45,7 @@ final class SecureStore: Store, AntigenTestProfileStoring {
 	func wipeAll(key: String?) {
 		do {
 			try kvStore.wipeAll(key: key)
+			antigenTestProfileSubject.send(nil)
 		} catch {
 			Log.error("kv store error", log: .localData, error: error)
 		}
@@ -156,21 +157,6 @@ final class SecureStore: Store, AntigenTestProfileStoring {
 		set { kvStore["wasRecentHourKeyDownloadSuccessful"] = newValue }
     }
 
-	var deviceTimeCheckResult: DeviceTimeCheck.TimeCheckResult {
-		get { kvStore["deviceTimeCheckResult"] as DeviceTimeCheck.TimeCheckResult? ?? .correct }
-		set { kvStore["deviceTimeCheckResult"] = newValue }
-	}
-
-	var deviceTimeLastStateChange: Date {
-		get { kvStore["deviceTimeLastStateChange"] as Date? ?? Date() }
-		set { kvStore["deviceTimeLastStateChange"] = newValue }
-	}
-
-	var wasDeviceTimeErrorShown: Bool {
-		get { kvStore["wasDeviceTimeErrorShown"] as Bool? ?? false }
-		set { kvStore["wasDeviceTimeErrorShown"] = newValue }
-	}
-
 	var lastKeyPackageDownloadDate: Date {
 		get { kvStore["lastKeyPackageDownloadDate"] as Date? ?? .distantPast }
 		set { kvStore["lastKeyPackageDownloadDate"] = newValue }
@@ -209,15 +195,13 @@ final class SecureStore: Store, AntigenTestProfileStoring {
 
     // MARK: - Protocol AntigenTestProfileStoring
 
-	lazy var antigenTestProfileSubject = {
-		CurrentValueSubject<AntigenTestProfile?, Never>(antigenTestProfile)
-	}()
+	lazy var antigenTestProfileSubject = CurrentValueSubject<AntigenTestProfile?, Never>(antigenTestProfile)
 
 	var antigenTestProfile: AntigenTestProfile? {
 		get { kvStore["antigenTestProfile"] as AntigenTestProfile? }
 		set {
 			kvStore["antigenTestProfile"] = newValue
-			antigenTestProfileSubject.value = newValue
+			antigenTestProfileSubject.send(newValue)
 		}
 	}
 
@@ -229,8 +213,8 @@ final class SecureStore: Store, AntigenTestProfileStoring {
     // MARK: - Protocol HealthCertificateStoring
 
 	var healthCertificateInfoScreenShown: Bool {
-		get { kvStore["healthCertificateInfoScreenShown"] as Bool? ?? false }
-		set { kvStore["healthCertificateInfoScreenShown"] = newValue }
+		get { kvStore["healthCertificateInfoScreenShown25"] as Bool? ?? false }
+		set { kvStore["healthCertificateInfoScreenShown25"] = newValue }
 	}
 
     var healthCertifiedPersons: [HealthCertifiedPerson] {
@@ -247,6 +231,16 @@ final class SecureStore: Store, AntigenTestProfileStoring {
 		get { kvStore["unseenTestCertificateCount"] as Int? ?? 0 }
 		set { kvStore["unseenTestCertificateCount"] = newValue }
 	}
+
+	var lastSelectedValidationCountry: Country {
+		get { kvStore["lastSelectedValidationCountry"] as Country? ?? Country.defaultCountry() }
+		set { kvStore["lastSelectedValidationCountry"] = newValue }
+	}
+
+	var lastSelectedValidationDate: Date {
+		get { kvStore["lastSelectedValidationDate"] as Date? ?? Date() }
+		set { kvStore["lastSelectedValidationDate"] = newValue }
+	}
 	
 	// MARK: - Protocol VaccinationCaching
 
@@ -255,6 +249,25 @@ final class SecureStore: Store, AntigenTestProfileStoring {
 		set { kvStore["vaccinationCertificateValueDataSets"] = newValue }
 	}
 	
+	// MARK: - Protocol HealthCertificateValidationCaching
+	
+	var validationOnboardedCountriesCache: HealthCertificateValidationOnboardedCountriesCache? {
+		get { kvStore["validationOnboardedCountriesCache"] as HealthCertificateValidationOnboardedCountriesCache? ?? nil }
+		set { kvStore["validationOnboardedCountriesCache"] = newValue }
+	}
+	
+	var acceptanceRulesCache: ValidationRulesCache? {
+		get { kvStore["acceptanceRulesCache"] as ValidationRulesCache? ?? nil }
+		set { kvStore["acceptanceRulesCache"] = newValue }
+	}
+	
+	var invalidationRulesCache: ValidationRulesCache? {
+		get { kvStore["invalidationRulesCache"] as ValidationRulesCache? ?? nil }
+		set { kvStore["invalidationRulesCache"] = newValue }
+	}
+	
+	// MARK: - Non-Release Stuff
+	
 	#if !RELEASE
 
 	// Settings from the debug menu.
@@ -262,11 +275,6 @@ final class SecureStore: Store, AntigenTestProfileStoring {
 	var fakeSQLiteError: Int32? {
 		get { kvStore["fakeSQLiteError"] as Int32? }
 		set { kvStore["fakeSQLiteError"] = newValue }
-	}
-
-	var dmKillDeviceTimeCheck: Bool {
-		get { kvStore["dmKillDeviceTimeCheck"] as Bool? ?? false }
-		set { kvStore["dmKillDeviceTimeCheck"] = newValue }
 	}
 
 	var mostRecentRiskCalculation: ENFRiskCalculation? {
@@ -340,6 +348,30 @@ extension SecureStore: WarnOthersTimeIntervalStoring {
 
 }
 
+extension SecureStore: DeviceTimeChecking {
+	var deviceTimeCheckResult: DeviceTimeCheck.TimeCheckResult {
+		get { kvStore["deviceTimeCheckResult"] as DeviceTimeCheck.TimeCheckResult? ?? .correct }
+		set { kvStore["deviceTimeCheckResult"] = newValue }
+	}
+
+	var deviceTimeLastStateChange: Date {
+		get { kvStore["deviceTimeLastStateChange"] as Date? ?? Date() }
+		set { kvStore["deviceTimeLastStateChange"] = newValue }
+	}
+
+	var wasDeviceTimeErrorShown: Bool {
+		get { kvStore["wasDeviceTimeErrorShown"] as Bool? ?? false }
+		set { kvStore["wasDeviceTimeErrorShown"] = newValue }
+	}
+
+	#if !RELEASE
+	var dmKillDeviceTimeCheck: Bool {
+		get { kvStore["dmKillDeviceTimeCheck"] as Bool? ?? false }
+		set { kvStore["dmKillDeviceTimeCheck"] = newValue }
+	}
+	#endif
+}
+
 extension SecureStore: AppConfigCaching {
 	var appConfigMetadata: AppConfigMetadata? {
 		get { kvStore["appConfigMetadataV2"] as AppConfigMetadata? ?? nil }
@@ -351,6 +383,18 @@ extension SecureStore: StatisticsCaching {
 	var statistics: StatisticsMetadata? {
 		get { kvStore["statistics"] as StatisticsMetadata? ?? nil }
 		set { kvStore["statistics"] = newValue }
+	}
+}
+
+extension SecureStore: LocalStatisticsCaching {
+	var localStatistics: [LocalStatisticsMetadata] {
+		get { kvStore["localStatistics"] as [LocalStatisticsMetadata]? ?? [] }
+		set { kvStore["localStatistics"] = newValue }
+	}
+	
+	var selectedLocalStatisticsRegions: [LocalStatisticsRegion] {
+		get { kvStore["selectedLocalStatisticsDistricts"] as [LocalStatisticsRegion]? ?? [] }
+		set { kvStore["selectedLocalStatisticsDistricts"] = newValue }
 	}
 }
 
@@ -404,6 +448,13 @@ extension SecureStore: ErrorLogProviding {
 		get { kvStore["otpElsAuthorizationDate"] as Date? }
 		set { kvStore["otpElsAuthorizationDate"] = newValue }
 	}
+	
+	#if !RELEASE
+	var elsLoggingActiveAtStartup: Bool {
+		get { kvStore["elsLoggingActiveAtStartup"] as Bool? ?? true }
+		set { kvStore["elsLoggingActiveAtStartup"] = newValue }
+	}
+	#endif
 }
 
 extension SecureStore: ErrorLogUploadHistoryProviding {
@@ -493,6 +544,14 @@ extension SecureStore: CoronaTestStoringLegacy {
 
 }
 
+extension SecureStore: DSCListCaching {
+
+	var dscList: DSCListMetaData? {
+		get { kvStore["DSCList"] as DSCListMetaData? }
+		set { kvStore["DSCList"] = newValue }
+	}
+}
+
 extension SecureStore {
 
 	static let keychainDatabaseKey = "secureStoreDatabaseKey"
@@ -559,4 +618,5 @@ extension SecureStore {
 			fatalError("Reset failure: \(error.localizedDescription)")
 		}
 	}
+	// swiftlint:disable file_length
 }

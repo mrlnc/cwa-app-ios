@@ -3,25 +3,50 @@
 //
 
 import Foundation
+import OpenCombine
 import HealthCertificateToolkit
 
-struct HealthCertificate: Codable, Equatable, Comparable {
+final class HealthCertificate: Codable, Equatable, Comparable {
 
 	// MARK: - Init
 
-	init(base45: Base45) throws {
-		// Ensure the data will be decodable on the fly later on, even though we don't store the decoded data
-		if case .failure(let error) = DigitalGreenCertificateAccess().extractCBORWebTokenHeader(from: base45) {
-			Log.error("Failed to decode header of health certificate with error", log: .vaccination, error: error)
-			throw error
-		}
-
-		if case .failure(let error) = DigitalGreenCertificateAccess().extractDigitalGreenCertificate(from: base45) {
-			Log.error("Failed to decode health certificate with error", log: .vaccination, error: error)
-			throw error
-		}
-
+	init(base45: Base45, validityState: HealthCertificateValidityState = .valid) throws {
 		self.base45 = base45
+		self.validityState = validityState
+
+		cborWebTokenHeader = try Self.extractCBORWebTokenHeader(from: base45)
+		digitalCovidCertificate = try Self.extractDigitalCovidCertificate(from: base45)
+		keyIdentifier = Self.extractKeyIdentifier(from: base45)
+	}
+
+	// MARK: - Protocol Codable
+
+	enum CodingKeys: String, CodingKey {
+		case base45
+		case validityState
+	}
+
+	required init(from decoder: Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+
+		base45 = try container.decode(Base45.self, forKey: .base45)
+		validityState = try container.decodeIfPresent(HealthCertificateValidityState.self, forKey: .validityState) ?? .valid
+
+		cborWebTokenHeader = try Self.extractCBORWebTokenHeader(from: base45)
+		digitalCovidCertificate = try Self.extractDigitalCovidCertificate(from: base45)
+		keyIdentifier = Self.extractKeyIdentifier(from: base45)
+	}
+
+	func encode(to encoder: Encoder) throws {
+		var container = encoder.container(keyedBy: CodingKeys.self)
+
+		try container.encode(base45, forKey: .base45)
+	}
+
+	// MARK: - Protocol Equatable
+
+	static func == (lhs: HealthCertificate, rhs: HealthCertificate) -> Bool {
+		lhs.base45 == rhs.base45
 	}
 
 	// MARK: - Protocol Comparable
@@ -35,58 +60,88 @@ struct HealthCertificate: Codable, Equatable, Comparable {
 	}
 
 	// MARK: - Internal
-
+	
 	enum CertificateType {
+		case vaccination
+		case test
+		case recovery
+	}
+
+	enum CertificateEntry {
 		case vaccination(VaccinationEntry)
 		case test(TestEntry)
 		case recovery(RecoveryEntry)
 	}
 
 	let base45: Base45
+	let cborWebTokenHeader: CBORWebTokenHeader
+	let digitalCovidCertificate: DigitalCovidCertificate
+	let keyIdentifier: String?
 
+	let objectDidChange = OpenCombine.PassthroughSubject<HealthCertificate, Never>()
+
+	@DidSetPublished var validityState: HealthCertificateValidityState {
+		didSet {
+			if validityState != oldValue {
+				objectDidChange.send(self)
+			}
+		}
+	}
+	
 	var version: String {
-		digitalGreenCertificate.version
+		digitalCovidCertificate.version
 	}
 
 	var name: HealthCertificateToolkit.Name {
-		digitalGreenCertificate.name
+		digitalCovidCertificate.name
 	}
 
 	var dateOfBirth: String {
-		digitalGreenCertificate.dateOfBirth
+		digitalCovidCertificate.dateOfBirth
 	}
 
 	var dateOfBirthDate: Date? {
-		return ISO8601DateFormatter.justLocalDateFormatter.date(from: digitalGreenCertificate.dateOfBirth)
+		return ISO8601DateFormatter.justLocalDateFormatter.date(from: digitalCovidCertificate.dateOfBirth)
 	}
 
 	var uniqueCertificateIdentifier: String? {
-		vaccinationEntry?.uniqueCertificateIdentifier ?? testEntry?.uniqueCertificateIdentifier
+		vaccinationEntry?.uniqueCertificateIdentifier ?? testEntry?.uniqueCertificateIdentifier ?? recoveryEntry?.uniqueCertificateIdentifier
 	}
 
 	var vaccinationEntry: VaccinationEntry? {
-		digitalGreenCertificate.vaccinationEntries?.first
+		digitalCovidCertificate.vaccinationEntries?.first
 	}
 
 	var testEntry: TestEntry? {
-		digitalGreenCertificate.testEntries?.first
+		digitalCovidCertificate.testEntries?.first
 	}
 
 	var recoveryEntry: RecoveryEntry? {
-		digitalGreenCertificate.recoveryEntries?.first
+		digitalCovidCertificate.recoveryEntries?.first
 	}
 
 	var hasTooManyEntries: Bool {
 		let entryCount = [
-			digitalGreenCertificate.vaccinationEntries?.count ?? 0,
-			digitalGreenCertificate.testEntries?.count ?? 0,
-			digitalGreenCertificate.recoveryEntries?.count ?? 0
+			digitalCovidCertificate.vaccinationEntries?.count ?? 0,
+			digitalCovidCertificate.testEntries?.count ?? 0,
+			digitalCovidCertificate.recoveryEntries?.count ?? 0
 		].reduce(0, +)
 
 		return entryCount != 1
 	}
 
 	var type: CertificateType {
+		switch entry {
+		case .vaccination:
+			return .vaccination
+		case .test:
+			return .test
+		case .recovery:
+			return .recovery
+		}
+	}
+
+	var entry: CertificateEntry {
 		if let vaccinationEntry = vaccinationEntry {
 			return .vaccination(vaccinationEntry)
 		} else if let testEntry = testEntry {
@@ -102,41 +157,33 @@ struct HealthCertificate: Codable, Equatable, Comparable {
 		#if DEBUG
 		if isUITesting, let localVaccinationDate = vaccinationEntry?.localVaccinationDate {
 			return Calendar.current.date(byAdding: .year, value: 1, to: localVaccinationDate) ??
-				Date(timeIntervalSince1970: TimeInterval(cborWebTokenHeader.expirationTime))
+				cborWebTokenHeader.expirationTime
 		}
 		#endif
 
-		return Date(timeIntervalSince1970: TimeInterval(cborWebTokenHeader.expirationTime))
+		return cborWebTokenHeader.expirationTime
+	}
+
+	var ageInHours: Int? {
+		guard let sortDate = sortDate else {
+			return nil
+		}
+
+		return Calendar.current.dateComponents([.hour], from: sortDate, to: Date()).hour
+	}
+
+	var ageInDays: Int? {
+		guard let sortDate = sortDate else {
+			return nil
+		}
+
+		return Calendar.current.dateComponents([.day], from: sortDate, to: Date()).day
 	}
 
 	// MARK: - Private
 
-	private var cborWebTokenHeader: CBORWebTokenHeader {
-		let result = DigitalGreenCertificateAccess().extractCBORWebTokenHeader(from: base45)
-
-		switch result {
-		case .success(let cborWebTokenHeader):
-			return cborWebTokenHeader
-		case .failure(let error):
-			Log.error("Failed to decode header of health certificate with error", log: .vaccination, error: error)
-			fatalError("Decoding the cborWebTokenHeader failed even though decodability was checked at initialization.")
-		}
-	}
-
-	private var digitalGreenCertificate: DigitalGreenCertificate {
-		let result = DigitalGreenCertificateAccess().extractDigitalGreenCertificate(from: base45)
-
-		switch result {
-		case .success(let digitalGreenCertificate):
-			return digitalGreenCertificate
-		case .failure(let error):
-			Log.error("Failed to decode health certificate with error", log: .vaccination, error: error)
-			fatalError("Decoding the digitalGreenCertificate failed even though decodability was checked at initialization.")
-		}
-	}
-
 	private var sortDate: Date? {
-		switch type {
+		switch entry {
 		case .vaccination(let vaccinationEntry):
 			return vaccinationEntry.localVaccinationDate
 		case .test(let testEntry):
@@ -146,4 +193,39 @@ struct HealthCertificate: Codable, Equatable, Comparable {
 		}
 	}
 
+	private static func extractCBORWebTokenHeader(from base45: Base45) throws -> CBORWebTokenHeader {
+		let webTokenHeaderResult = DigitalCovidCertificateAccess().extractCBORWebTokenHeader(from: base45)
+
+		switch webTokenHeaderResult {
+		case .success(let cborWebTokenHeader):
+			return cborWebTokenHeader
+		case .failure(let error):
+			Log.error("Failed to decode header of health certificate with error", log: .vaccination, error: error)
+			throw error
+		}
+	}
+
+	private static func extractDigitalCovidCertificate(from base45: Base45) throws -> DigitalCovidCertificate {
+		let certificateResult = DigitalCovidCertificateAccess().extractDigitalCovidCertificate(from: base45)
+
+		switch certificateResult {
+		case .success(let digitalCovidCertificate):
+			return digitalCovidCertificate
+		case .failure(let error):
+			Log.error("Failed to decode health certificate with error", log: .vaccination, error: error)
+			throw error
+		}
+	}
+
+	private static func extractKeyIdentifier(from base45: Base45) -> Base64? {
+		let certificateResult = DigitalCovidCertificateAccess().extractKeyIdentifier(from: base45)
+
+		switch certificateResult {
+		case .success(let keyIdentifier):
+			return keyIdentifier
+		case .failure(let error):
+			Log.error("Failed to decode key identifier (kid) with error", log: .vaccination, error: error)
+			return nil
+		}
+	}
 }

@@ -12,9 +12,9 @@ class HealthCertificateTests: XCTestCase {
 	func testGIVEN_Base45WellformedEncoded_WHEN_InitIsCalled_THEN_HealthCertificateIsCreated() throws {
 		
 		// GIVEN
-		let dgcCertificate = DigitalGreenCertificate.fake()
+		let dgcCertificate = DigitalCovidCertificate.fake()
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -34,9 +34,9 @@ class HealthCertificateTests: XCTestCase {
 	func testGIVEN_Base45WrongCBORHeaderEncoded_WHEN_InitIsCalled_THEN_FailureIsReturned() throws {
 		
 		// GIVEN
-		let dgcCertificate = DigitalGreenCertificate.fake()
+		let dgcCertificate = DigitalCovidCertificate.fake()
 		
-		let result = DigitalGreenCertificateFake.makeBase45CorruptFake(
+		let result = DigitalCovidCertificateFake.makeBase45CorruptFake(
 			from: dgcCertificate
 		)
 		
@@ -64,9 +64,9 @@ class HealthCertificateTests: XCTestCase {
 	func testGIVEN_Base45WrongDGCEncoded_WHEN_InitIsCalled_THEN_FailureIsReturned() throws {
 		
 		// GIVEN
-		let dgcCertificate = DigitalGreenCertificate.fake(dateOfBirth: "WrongDOB")
+		let dgcCertificate = DigitalCovidCertificate.fake(dateOfBirth: "WrongDOB")
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -95,13 +95,13 @@ class HealthCertificateTests: XCTestCase {
 	func testGIVEN_TwoCertificates_WHEN_Compare1_THEN_CompareIsCorrect() throws {
 		// GIVEN
 		let dateOfVaccination1 = "2020-01-01"
-		let dgcCertificate1 = DigitalGreenCertificate.fake(
+		let dgcCertificate1 = DigitalCovidCertificate.fake(
 			vaccinationEntries: [VaccinationEntry.fake(
 				dateOfVaccination: dateOfVaccination1
 			)]
 		)
 		
-		let result1 = DigitalGreenCertificateFake.makeBase45Fake(
+		let result1 = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate1,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -112,13 +112,13 @@ class HealthCertificateTests: XCTestCase {
 		}
 		
 		let dateOfVaccination2 = "2019-01-01"
-		let dgcCertificate2 = DigitalGreenCertificate.fake(
+		let dgcCertificate2 = DigitalCovidCertificate.fake(
 			vaccinationEntries: [VaccinationEntry.fake(
 				dateOfVaccination: dateOfVaccination2
 			)]
 		)
 		
-		let result2 = DigitalGreenCertificateFake.makeBase45Fake(
+		let result2 = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate2,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -145,13 +145,13 @@ class HealthCertificateTests: XCTestCase {
 	func testGIVEN_TwoCertificates_WHEN_Compare2_THEN_CompareIsCorrect() throws {
 		// GIVEN
 		let dateOfVaccination1 = "2020-01-01"
-		let dgcCertificate1 = DigitalGreenCertificate.fake(
+		let dgcCertificate1 = DigitalCovidCertificate.fake(
 			vaccinationEntries: [VaccinationEntry.fake(
 				dateOfVaccination: dateOfVaccination1
 			)]
 		)
 		
-		let result1 = DigitalGreenCertificateFake.makeBase45Fake(
+		let result1 = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate1,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -162,13 +162,13 @@ class HealthCertificateTests: XCTestCase {
 		}
 		
 		let dateTimeOfSampleCollection = "2019-01-01"
-		let dgcCertificate2 = DigitalGreenCertificate.fake(
+		let dgcCertificate2 = DigitalCovidCertificate.fake(
 			vaccinationEntries: [VaccinationEntry.fake(
 				dateOfVaccination: dateTimeOfSampleCollection
 			)]
 		)
 		
-		let result2 = DigitalGreenCertificateFake.makeBase45Fake(
+		let result2 = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate2,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -194,19 +194,19 @@ class HealthCertificateTests: XCTestCase {
 
 	func testGIVEN_MultipleCertificates_WHEN_Sorting_THEN_OrderIsCorrect() throws {
 		// GIVEN
-		let vaccinationCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let vaccinationCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			vaccinationEntries: [VaccinationEntry.fake(
 				dateOfVaccination: "2020-01-03"
 			)]
 		))
 
-		let testCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let testCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			testEntries: [TestEntry.fake(
 				dateTimeOfSampleCollection: "2020-01-02T12:00:00.000Z"
 			)]
 		))
 
-		let recoveryCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let recoveryCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			recoveryEntries: [RecoveryEntry.fake(
 				certificateValidFrom: "2020-01-01"
 			)]
@@ -230,11 +230,11 @@ class HealthCertificateTests: XCTestCase {
 		
 		let expectedVersion = "1.1.1"
 		
-		let dgcCertificate = DigitalGreenCertificate.fake(
+		let dgcCertificate = DigitalCovidCertificate.fake(
 			version: expectedVersion
 		)
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -259,11 +259,11 @@ class HealthCertificateTests: XCTestCase {
 		
 		let expectedName = Name.fake()
 		
-		let dgcCertificate = DigitalGreenCertificate.fake(
+		let dgcCertificate = DigitalCovidCertificate.fake(
 			name: expectedName
 		)
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -288,11 +288,11 @@ class HealthCertificateTests: XCTestCase {
 		
 		let expectedDoB = "2021-06-10"
 		
-		let dgcCertificate = DigitalGreenCertificate.fake(
+		let dgcCertificate = DigitalCovidCertificate.fake(
 			dateOfBirth: expectedDoB
 		)
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -318,11 +318,11 @@ class HealthCertificateTests: XCTestCase {
 		let dateOfBirth = "2021-06-10"
 		let expectedDateOfBirthDate = ISO8601DateFormatter.justLocalDateFormatter.date(from: dateOfBirth)
 		
-		let dgcCertificate = DigitalGreenCertificate.fake(
+		let dgcCertificate = DigitalCovidCertificate.fake(
 			dateOfBirth: dateOfBirth
 		)
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -351,11 +351,11 @@ class HealthCertificateTests: XCTestCase {
 			uniqueCertificateIdentifier: expectedUniqueCertificateIdentifier
 		)
 		
-		let dgcCertificate = DigitalGreenCertificate.fake(
+		let dgcCertificate = DigitalCovidCertificate.fake(
 			vaccinationEntries: [vaccinationEntry]
 		)
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -378,19 +378,15 @@ class HealthCertificateTests: XCTestCase {
 		
 		// GIVEN
 			
-		let testEntry1 = TestEntry.fake(
-			testCenter: "Frankfurt Ginnheim Stadtplatz"
-		)
-		
-		let testEntry2 = TestEntry.fake(
+		let testEntry = TestEntry.fake(
 			testCenter: "Karben Bürgerzentrum"
 		)
 		
-		let dgcCertificate = DigitalGreenCertificate.fake(
-			testEntries: [testEntry2, testEntry1]
+		let dgcCertificate = DigitalCovidCertificate.fake(
+			testEntries: [testEntry]
 		)
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -415,11 +411,11 @@ class HealthCertificateTests: XCTestCase {
 			
 		let expectedVaccinationEntry = VaccinationEntry.fake()
 		
-		let dgcCertificate = DigitalGreenCertificate.fake(
+		let dgcCertificate = DigitalCovidCertificate.fake(
 			vaccinationEntries: [expectedVaccinationEntry]
 		)
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -432,11 +428,11 @@ class HealthCertificateTests: XCTestCase {
 		// WHEN
 		
 		let healthCertificate = try HealthCertificate(base45: base45)
-		let type = healthCertificate.type
+		let entry = healthCertificate.entry
 		
 		// THEN
 		
-		guard case let .vaccination(vaccinationEntry) = type else {
+		guard case let .vaccination(vaccinationEntry) = entry else {
 			XCTFail("This should only contain a vaccinationEntry, nothing else")
 			return
 		}
@@ -450,11 +446,11 @@ class HealthCertificateTests: XCTestCase {
 			
 		let expectedTestEntry = TestEntry.fake()
 		
-		let dgcCertificate = DigitalGreenCertificate.fake(
+		let dgcCertificate = DigitalCovidCertificate.fake(
 			testEntries: [expectedTestEntry]
 		)
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake()
 		)
@@ -467,11 +463,11 @@ class HealthCertificateTests: XCTestCase {
 		// WHEN
 		
 		let healthCertificate = try HealthCertificate(base45: base45)
-		let type = healthCertificate.type
+		let entry = healthCertificate.entry
 		
 		// THEN
 		
-		guard case let .test(testEntry) = type else {
+		guard case let .test(testEntry) = entry else {
 			XCTFail("This should only contain a testEntry, nothing else")
 			return
 		}
@@ -483,15 +479,15 @@ class HealthCertificateTests: XCTestCase {
 		
 		// GIVEN
 			
-		let expirationTime: UInt64 = 0123456798
-		let expectedDate = Date(timeIntervalSince1970: TimeInterval(expirationTime))
+		let expirationTime: Date = Date(timeIntervalSince1970: 0123456798)
 		
-		let dgcCertificate = DigitalGreenCertificate.fake()
+		let dgcCertificate = DigitalCovidCertificate.fake()
 		
-		let result = DigitalGreenCertificateFake.makeBase45Fake(
+		let result = DigitalCovidCertificateFake.makeBase45Fake(
 			from: dgcCertificate,
 			and: CBORWebTokenHeader.fake(
-				expirationTime: expirationTime)
+				expirationTime: expirationTime
+			)
 		)
 		
 		guard case let .success(base45) = result else {
@@ -505,24 +501,24 @@ class HealthCertificateTests: XCTestCase {
 		
 		// THEN
 	
-		XCTAssertEqual(healthCertificate.expirationDate, expectedDate)
+		XCTAssertEqual(healthCertificate.expirationDate, expirationTime)
 	}
 
 	func testGIVEN_CertificatesWithOneEntry_WHEN_CheckingTooManyEntries_FalseIsReturned() throws {
 		// GIVEN
-		let vaccinationCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let vaccinationCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			vaccinationEntries: [VaccinationEntry.fake(
 				dateOfVaccination: "2020-01-03"
 			)]
 		))
 
-		let testCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let testCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			testEntries: [TestEntry.fake(
 				dateTimeOfSampleCollection: "2020-01-02T12:00:00.000Z"
 			)]
 		))
 
-		let recoveryCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let recoveryCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			vaccinationEntries: [VaccinationEntry.fake(
 				dateOfVaccination: "2020-01-01"
 			)]
@@ -540,7 +536,7 @@ class HealthCertificateTests: XCTestCase {
 
 	func testGIVEN_CertificatesWithMultipleEntries_WHEN_CheckingTooManyEntries_TrueIsReturned() throws {
 		// GIVEN
-		let firstWrongCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let firstWrongCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			vaccinationEntries: [VaccinationEntry.fake(
 				dateOfVaccination: "2020-01-01"
 			)],
@@ -550,7 +546,7 @@ class HealthCertificateTests: XCTestCase {
 			recoveryEntries: nil
 		))
 
-		let secondWrongCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let secondWrongCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			vaccinationEntries: [VaccinationEntry.fake(
 				dateOfVaccination: "2020-01-01"
 			)],
@@ -560,7 +556,7 @@ class HealthCertificateTests: XCTestCase {
 			)]
 		))
 
-		let thirdWrongCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let thirdWrongCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			vaccinationEntries: nil,
 			testEntries: [TestEntry.fake(
 				dateTimeOfSampleCollection: "2020-01-02T12:00:00.000Z"
@@ -570,7 +566,7 @@ class HealthCertificateTests: XCTestCase {
 			)]
 		))
 
-		let fourthWrongCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let fourthWrongCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			vaccinationEntries: [VaccinationEntry.fake(
 				dateOfVaccination: "2020-01-01"
 			)],
@@ -582,7 +578,7 @@ class HealthCertificateTests: XCTestCase {
 			)]
 		))
 
-		let fifthWrongCertificateBase45 = try base45Fake(from: DigitalGreenCertificate.fake(
+		let fifthWrongCertificateBase45 = try base45Fake(from: DigitalCovidCertificate.fake(
 			vaccinationEntries: [
 				VaccinationEntry.fake(
 					dateOfVaccination: "2020-01-01"
@@ -599,14 +595,16 @@ class HealthCertificateTests: XCTestCase {
 		let secondWrongCertificate = try HealthCertificate(base45: secondWrongCertificateBase45)
 		let thirdWrongCertificate = try HealthCertificate(base45: thirdWrongCertificateBase45)
 		let fourthWrongCertificate = try HealthCertificate(base45: fourthWrongCertificateBase45)
-		let fifthWrongCertificate = try HealthCertificate(base45: fifthWrongCertificateBase45)
 
 		// WHEN / THEN
 		XCTAssertTrue(firstWrongCertificate.hasTooManyEntries)
 		XCTAssertTrue(secondWrongCertificate.hasTooManyEntries)
 		XCTAssertTrue(thirdWrongCertificate.hasTooManyEntries)
 		XCTAssertTrue(fourthWrongCertificate.hasTooManyEntries)
-		XCTAssertTrue(fifthWrongCertificate.hasTooManyEntries)
+
+		// In case of more than 1 entry for vaccinationEntries the initializer of HealthCertificate will fail due to a json schema validation error.
+		let fifthWrongCertificate = try? HealthCertificate(base45: fifthWrongCertificateBase45)
+		XCTAssertNil(fifthWrongCertificate)
 	}
 
 }

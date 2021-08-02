@@ -5,6 +5,7 @@
 @testable import ENA
 import Foundation
 import XCTest
+import HealthCertificateToolkit
 
 class ExposureSubmissionCoordinatorTests: CWATestCase {
 
@@ -34,6 +35,8 @@ class ExposureSubmissionCoordinatorTests: CWATestCase {
 			appConfiguration: appConfiguration,
 			healthCertificateService: HealthCertificateService(
 				store: store,
+				signatureVerifying: DCCSignatureVerifyingStub(),
+				dscListProvider: MockDSCListProvider(),
 				client: client,
 				appConfiguration: appConfiguration
 			)
@@ -92,7 +95,7 @@ class ExposureSubmissionCoordinatorTests: CWATestCase {
 		
 		let section2 = vc.dynamicTableViewModel.section(1)
 		XCTAssertNotNil(section2)
-		XCTAssertEqual(section2.cells.count, 5)
+		XCTAssertEqual(section2.cells.count, 6)
 
 	}
 

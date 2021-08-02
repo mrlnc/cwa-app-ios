@@ -3,6 +3,7 @@
 //
 
 import XCTest
+import HealthCertificateToolkit
 @testable import ENA
 
 class HomeTableViewModelTests: CWATestCase {
@@ -21,6 +22,10 @@ class HomeTableViewModelTests: CWATestCase {
 				statisticsProvider: StatisticsProvider(
 					client: CachingHTTPClientMock(),
 					store: store
+				),
+				localStatisticsProvider: LocalStatisticsProvider(
+					client: CachingHTTPClientMock(),
+					store: store
 				)
 			),
 			store: store,
@@ -32,6 +37,8 @@ class HomeTableViewModelTests: CWATestCase {
 				appConfiguration: appConfiguration,
 				healthCertificateService: HealthCertificateService(
 					store: store,
+					signatureVerifying: DCCSignatureVerifyingStub(),
+					dscListProvider: MockDSCListProvider(),
 					client: client,
 					appConfiguration: appConfiguration
 				)
@@ -95,7 +102,11 @@ class HomeTableViewModelTests: CWATestCase {
 				statisticsProvider: StatisticsProvider(
 					client: CachingHTTPClientMock(),
 					store: store
-				)
+				),
+				localStatisticsProvider: LocalStatisticsProvider(
+				 client: CachingHTTPClientMock(),
+				 store: store
+			 )
 			),
 			store: store,
 			coronaTestService: CoronaTestService(
@@ -106,6 +117,8 @@ class HomeTableViewModelTests: CWATestCase {
 				appConfiguration: appConfiguration,
 				healthCertificateService: HealthCertificateService(
 					store: store,
+					signatureVerifying: DCCSignatureVerifyingStub(),
+					dscListProvider: MockDSCListProvider(),
 					client: client,
 					appConfiguration: appConfiguration
 				)
@@ -138,7 +151,11 @@ class HomeTableViewModelTests: CWATestCase {
 				statisticsProvider: StatisticsProvider(
 					client: CachingHTTPClientMock(),
 					store: store
-				)
+				),
+				localStatisticsProvider: LocalStatisticsProvider(
+				 client: CachingHTTPClientMock(),
+				 store: store
+			 )
 			),
 			store: store,
 			coronaTestService: CoronaTestService(
@@ -149,6 +166,8 @@ class HomeTableViewModelTests: CWATestCase {
 				appConfiguration: appConfiguration,
 				healthCertificateService: HealthCertificateService(
 					store: store,
+					signatureVerifying: DCCSignatureVerifyingStub(),
+					dscListProvider: MockDSCListProvider(),
 					client: client,
 					appConfiguration: appConfiguration
 				)
@@ -174,7 +193,11 @@ class HomeTableViewModelTests: CWATestCase {
 				statisticsProvider: StatisticsProvider(
 					client: CachingHTTPClientMock(),
 					store: store
-				)
+				),
+				localStatisticsProvider: LocalStatisticsProvider(
+				 client: CachingHTTPClientMock(),
+				 store: store
+			 )
 			),
 			store: store,
 			coronaTestService: CoronaTestService(
@@ -185,6 +208,8 @@ class HomeTableViewModelTests: CWATestCase {
 				appConfiguration: appConfiguration,
 				healthCertificateService: HealthCertificateService(
 					store: store,
+					signatureVerifying: DCCSignatureVerifyingStub(),
+					dscListProvider: MockDSCListProvider(),
 					client: client,
 					appConfiguration: appConfiguration
 				)
@@ -217,7 +242,11 @@ class HomeTableViewModelTests: CWATestCase {
 				statisticsProvider: StatisticsProvider(
 					client: CachingHTTPClientMock(),
 					store: store
-				)
+				),
+				localStatisticsProvider: LocalStatisticsProvider(
+				 client: CachingHTTPClientMock(),
+				 store: store
+			 )
 			),
 			store: store,
 			coronaTestService: CoronaTestService(
@@ -228,6 +257,8 @@ class HomeTableViewModelTests: CWATestCase {
 				appConfiguration: appConfiguration,
 				healthCertificateService: HealthCertificateService(
 					store: store,
+					signatureVerifying: DCCSignatureVerifyingStub(),
+					dscListProvider: MockDSCListProvider(),
 					client: client,
 					appConfiguration: appConfiguration
 				)

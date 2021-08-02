@@ -20,6 +20,9 @@ class HomeStatisticsCellModelTests: CWATestCase {
 			statisticsProvider: StatisticsProvider(
 				client: CachingHTTPClientMock(),
 				store: store
+			), localStatisticsProvider: LocalStatisticsProvider(
+				client: CachingHTTPClientMock(),
+				store: store
 			)
 		)
 		homeState.statistics.keyFigureCards = []
@@ -54,7 +57,6 @@ class HomeStatisticsCellModelTests: CWATestCase {
 	}
 
 	// MARK: - Private
-
 	private func keyFigureCard(
 		cardID: Int32 = 0
 	) -> SAP_Internal_Stats_KeyFigureCard {
@@ -67,4 +69,15 @@ class HomeStatisticsCellModelTests: CWATestCase {
 		return card
 	}
 
+	private func administrativeUnitData(
+		administrativeUnitShortID: UInt32 = 0
+	) -> SAP_Internal_Stats_AdministrativeUnitData {
+		var administrativeUnitData = SAP_Internal_Stats_AdministrativeUnitData()
+		administrativeUnitData.administrativeUnitShortID = administrativeUnitShortID
+		var sevenDayIncidence = SAP_Internal_Stats_SevenDayIncidenceData()
+		sevenDayIncidence.trend = .increasing
+		sevenDayIncidence.value = 50
+		administrativeUnitData.sevenDayIncidence = sevenDayIncidence
+		return administrativeUnitData
+	}
 }

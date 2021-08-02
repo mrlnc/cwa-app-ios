@@ -3,7 +3,6 @@
 //
 
 import Foundation
-import UIKit
 import OpenCombine
 
 class HomeStatisticsCellModel {
@@ -23,15 +22,25 @@ class HomeStatisticsCellModel {
 					}
 			}
 			.store(in: &subscriptions)
+		
+		homeState.$selectedLocalStatistics
+			.sink { [weak self] selectedLocalStatistics in
+				  self?.selectedLocalStatistics = selectedLocalStatistics
+				  Log.debug("HomeState did update. \(private: "\(self?.selectedLocalStatistics.count ?? -1)")", log: .localStatistics)
+			}
+			.store(in: &subscriptions)
 	}
 
 	// MARK: - Internal
 
-	@OpenCombine.Published private(set) var keyFigureCards = [SAP_Internal_Stats_KeyFigureCard]()
+	let homeState: HomeState
+
+	/// The default set of 'global' statistics for every user
+	@DidSetPublished private(set) var keyFigureCards = [SAP_Internal_Stats_KeyFigureCard]()
+	@DidSetPublished private(set) var selectedLocalStatistics = [SelectedLocalStatisticsTuple]()
 
 	// MARK: - Private
 
-	private let homeState: HomeState
 	private var subscriptions = Set<AnyCancellable>()
 
 }

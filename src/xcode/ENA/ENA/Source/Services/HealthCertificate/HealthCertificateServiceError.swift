@@ -11,6 +11,7 @@ enum HealthCertificateServiceError: Error {
 		case decodingError(CertificateDecodingError)
 		case certificateAlreadyRegistered(HealthCertificate.CertificateType)
 		case certificateHasTooManyEntries
+		case invalidSignature
 		case other(Error)
 
 		var errorDescription: String? {
@@ -25,6 +26,8 @@ enum HealthCertificateServiceError: Error {
 					return "\(AppStrings.HealthCertificate.Error.hcInvalid) (HC_COSE_TAG_INVALID)"
 				case .HC_COSE_MESSAGE_INVALID:
 					return "\(AppStrings.HealthCertificate.Error.hcInvalid) (HC_COSE_MESSAGE_INVALID)"
+				case .HC_COSE_NO_KEYIDENTIFIER:
+					return "\(AppStrings.HealthCertificate.Error.hcInvalid) (HC_COSE_NO_KEYIDENTIFIER)"
 				case .HC_CBOR_DECODING_FAILED:
 					return "\(AppStrings.HealthCertificate.Error.hcInvalid) (HC_CBOR_DECODING_FAILED)"
 				case .HC_CBORWEBTOKEN_NO_ISSUER:
@@ -38,7 +41,7 @@ enum HealthCertificateServiceError: Error {
 				case .HC_JSON_SCHEMA_INVALID:
 					return "\(AppStrings.HealthCertificate.Error.hcInvalid) (JSON_SCHEMA_INVALID)"
 				case .HC_PREFIX_INVALID:
-					return "\(AppStrings.HealthCertificate.Error.hcInvalid) (PREFIX_INVALID)"
+					return "\(AppStrings.HealthCertificate.Error.hcInvalid) (HC_PREFIX_INVALID)"
 				case .AES_DECRYPTION_FAILED:
 					return "\(AppStrings.HealthCertificate.Error.hcInvalid) (AES_DECRYPTION_FAILED)"
 				case .HC_BASE45_ENCODING_FAILED:
@@ -59,6 +62,17 @@ enum HealthCertificateServiceError: Error {
 				return "\(AppStrings.HealthCertificate.Error.hcNotSupported) (HC_TOO_MANY_ENTRIES)"
 			case .other(let error):
 				return error.localizedDescription
+			case .invalidSignature:
+				return AppStrings.HealthCertificate.Error.invalidSignatureText
+			}
+		}
+
+		var errorTitle: String? {
+			switch self {
+			case .invalidSignature:
+				return AppStrings.HealthCertificate.Error.invalidSignatureTitle
+			default:
+				return nil
 			}
 		}
 	}
@@ -71,6 +85,7 @@ enum HealthCertificateServiceError: Error {
 		case decryptionFailed(Error)
 		case assemblyFailed(CertificateDecodingError)
 		case registrationError(HealthCertificateServiceError.RegistrationError)
+		case dgcNotSupportedByLab
 		case other(Error)
 
 		var errorDescription: String? {
@@ -116,7 +131,21 @@ enum HealthCertificateServiceError: Error {
 				case .testResultNotYetReceived:
 					return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.e2eErrorCallHotline, "DCC_COMP_412")
 				case .internalServerError(reason: let reason):
-					return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.tryAgain, "DCC_COMP_500_\(String(describing: reason))")
+					switch reason {
+					case "INTERNAL":
+						return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.tryAgain, "DCC_COMP_500_INTERNAL")
+					case "LAB_INVALID_RESPONSE":
+						return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.e2eErrorCallHotline, "DCC_COMP_500_LAB_INVALID_RESPONSE")
+					case "SIGNING_CLIENT_ERROR":
+						return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.e2eErrorCallHotline, "DCC_COMP_500_SIGNING_CLIENT_ERROR")
+					case "SIGNING_SERVER_ERROR":
+						return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.e2eErrorCallHotline, "DCC_COMP_500_SIGNING_SERVER_ERROR")
+					case .some(let reason):
+						return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.tryAgain, "DCC_COMP_500_\(reason)")
+					case .none:
+						return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.tryAgain, "DCC_COMP_500")
+					}
+
 				case .defaultServerError(let error):
 					return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.tryAgain, "DCC_COMP_FAILED (\(error.localizedDescription)")
 				case .noNetworkConnection:
@@ -147,6 +176,8 @@ enum HealthCertificateServiceError: Error {
 					return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.tryAgain, "DCC_ZLIB_DECOMPRESSION_FAILED")
 				case .HC_COSE_TAG_INVALID:
 					return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.e2eErrorCallHotline, "DCC_COSE_TAG_INVALID")
+				case .HC_COSE_NO_KEYIDENTIFIER:
+					return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.e2eErrorCallHotline, "HC_COSE_NO_KEYIDENTIFIER")
 				case .HC_COSE_MESSAGE_INVALID:
 					return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.e2eErrorCallHotline, "DCC_COSE_MESSAGE_INVALID")
 				case .HC_CBOR_DECODING_FAILED:
@@ -174,6 +205,8 @@ enum HealthCertificateServiceError: Error {
 				return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.tryAgain, error.localizedDescription)
 			case .registrationError(let error):
 				return error.errorDescription
+			case .dgcNotSupportedByLab:
+				return String(format: AppStrings.HealthCertificate.Overview.TestCertificateRequest.Error.dgcNotSupportedByLab, "DGC_NOT_SUPPORTED_BY_LAB")
 			}
 		}
 	}

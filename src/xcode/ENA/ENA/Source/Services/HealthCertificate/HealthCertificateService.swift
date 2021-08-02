@@ -13,49 +13,36 @@ class HealthCertificateService {
 
 	init(
 		store: HealthCertificateStoring,
+		signatureVerifying: DCCSignatureVerifying,
+		dscListProvider: DSCListProviding,
 		client: Client,
 		appConfiguration: AppConfigurationProviding,
-		digitalGreenCertificateAccess: DigitalGreenCertificateAccessProtocol = DigitalGreenCertificateAccess()
+		digitalCovidCertificateAccess: DigitalCovidCertificateAccessProtocol = DigitalCovidCertificateAccess()
 	) {
-
 		#if DEBUG
 		if isUITesting {
-			self.store = MockTestStore()
+			let store = MockTestStore()
+
+			self.store = store
+			self.signatureVerifying = signatureVerifying
+			self.dscListProvider = DSCListProvider(client: CachingHTTPClientMock(), store: store)
 			self.client = ClientMock()
 			self.appConfiguration = CachedAppConfigurationMock()
-			self.digitalGreenCertificateAccess = digitalGreenCertificateAccess
+			self.digitalCovidCertificateAccess = digitalCovidCertificateAccess
 
 			setup()
-
-			// check launch arguments ->
-			if LaunchArguments.healthCertificate.firstHealthCertificate.boolValue {
-				registerHealthCertificate(base45: HealthCertificate.firstBase45Mock)
-			} else if LaunchArguments.healthCertificate.firstAndSecondHealthCertificate.boolValue {
-				registerHealthCertificate(base45: HealthCertificate.firstBase45Mock)
-				registerHealthCertificate(base45: HealthCertificate.lastBase45Mock)
-			}
-
-			if LaunchArguments.healthCertificate.testCertificateRegistered.boolValue {
-				let result = DigitalGreenCertificateFake.makeBase45Fake(
-					from: DigitalGreenCertificate.fake(
-						name: .fake(familyName: "Schneider", givenName: "Andrea", standardizedFamilyName: "SCHNEIDER", standardizedGivenName: "ANDREA"),
-						testEntries: [TestEntry.fake(dateTimeOfSampleCollection: "2021-04-12T16:01:00Z")]
-					),
-					and: CBORWebTokenHeader.fake()
-				)
-				if case let .success(base45) = result {
-					registerHealthCertificate(base45: base45)
-				}
-			}
+			configureForLaunchArguments()
 
 			return
 		}
 		#endif
 
 		self.store = store
+		self.signatureVerifying = signatureVerifying
+		self.dscListProvider = dscListProvider
 		self.client = client
 		self.appConfiguration = appConfiguration
-		self.digitalGreenCertificateAccess = digitalGreenCertificateAccess
+		self.digitalCovidCertificateAccess = digitalCovidCertificateAccess
 
 		setup()
 	}
@@ -66,6 +53,22 @@ class HealthCertificateService {
 	private(set) var testCertificateRequests = CurrentValueSubject<[TestCertificateRequest], Never>([])
 	private(set) var unseenTestCertificateCount = CurrentValueSubject<Int, Never>(0)
 
+	var nextValidityTimer: Timer?
+
+	var nextFireDate: Date? {
+		let healthCertificates = healthCertifiedPersons.value
+			.flatMap { $0.healthCertificates }
+		let signingCertificates = dscListProvider.signingCertificates.value
+
+		let allValidUntilDates = validUntilDates(for: healthCertificates, signingCertificates: signingCertificates)
+		let allExpirationDates = expirationDates(for: healthCertificates)
+		let allDatesToExam = (allValidUntilDates + allExpirationDates)
+			.filter { date in
+				date.timeIntervalSinceNow.sign == .plus
+			}
+		return allDatesToExam.min()
+	}
+
 	@discardableResult
 	func registerHealthCertificate(
 		base45: Base45
@@ -74,6 +77,15 @@ class HealthCertificateService {
 
 		do {
 			let healthCertificate = try HealthCertificate(base45: base45)
+
+			// check signature
+			if case .failure = signatureVerifying.verify(
+				certificate: base45,
+				with: dscListProvider.signingCertificates.value,
+				and: Date()
+			) {
+				return .failure(.invalidSignature)
+			}
 
 			let healthCertifiedPerson = healthCertifiedPersons.value
 				.first(where: {
@@ -100,7 +112,8 @@ class HealthCertificateService {
 
 			if !healthCertifiedPersons.value.contains(healthCertifiedPerson) {
 				Log.info("[HealthCertificateService] Successfully registered health certificate for a new person", log: .api)
-				healthCertifiedPersons.value.append(healthCertifiedPerson)
+				healthCertifiedPersons.value = (healthCertifiedPersons.value + [healthCertifiedPerson]).sorted()
+				updateGradients()
 			} else {
 				Log.info("[HealthCertificateService] Successfully registered health certificate for a person with other existing certificates", log: .api)
 			}
@@ -122,7 +135,10 @@ class HealthCertificateService {
 				Log.info("[HealthCertificateService] Removed health certificate at index \(index)", log: .api)
 
 				if healthCertifiedPerson.healthCertificates.isEmpty {
-					healthCertifiedPersons.value.removeAll(where: { $0 == healthCertifiedPerson })
+					healthCertifiedPersons.value = healthCertifiedPersons.value
+						.filter { $0 != healthCertifiedPerson }
+						.sorted()
+					updateGradients()
 
 					Log.info("[HealthCertificateService] Removed health certified person", log: .api)
 				}
@@ -137,6 +153,7 @@ class HealthCertificateService {
 		registrationToken: String,
 		registrationDate: Date,
 		retryExecutionIfCertificateIsPending: Bool,
+		labId: String?,
 		completion: ((Result<Void, HealthCertificateServiceError.TestCertificateRequestError>) -> Void)? = nil
 	) {
 		Log.info("[HealthCertificateService] Registering test certificate request: (coronaTestType: \(coronaTestType), registrationToken: \(private: registrationToken), registrationDate: \(registrationDate), retryExecutionIfCertificateIsPending: \(retryExecutionIfCertificateIsPending)", log: .api)
@@ -144,7 +161,8 @@ class HealthCertificateService {
 		let testCertificateRequest = TestCertificateRequest(
 			coronaTestType: coronaTestType,
 			registrationToken: registrationToken,
-			registrationDate: registrationDate
+			registrationDate: registrationDate,
+			labId: labId
 		)
 
 		testCertificateRequests.value.append(testCertificateRequest)
@@ -157,13 +175,23 @@ class HealthCertificateService {
 		)
 	}
 
+	// swiftlint:disable:next cyclomatic_complexity
 	func executeTestCertificateRequest(
 		_ testCertificateRequest: TestCertificateRequest,
 		retryIfCertificateIsPending: Bool,
 		completion: ((Result<Void, HealthCertificateServiceError.TestCertificateRequestError>) -> Void)? = nil
 	) {
 		Log.info("[HealthCertificateService] Executing test certificate request: \(private: testCertificateRequest)", log: .api)
+
 		testCertificateRequest.isLoading = true
+
+		// If we didn't retrieve a labId for a PRC test result, the lab is not supporting test certificates.
+		if testCertificateRequest.coronaTestType == .pcr && testCertificateRequest.labId == nil {
+			testCertificateRequest.requestExecutionFailed = true
+			testCertificateRequest.isLoading = false
+			completion?(.failure(.dgcNotSupportedByLab))
+			return
+		}
 
 		do {
 			let rsaKeyPair = try testCertificateRequest.rsaKeyPair ?? DCCRSAKeyPair(registrationToken: testCertificateRequest.registrationToken)
@@ -290,12 +318,96 @@ class HealthCertificateService {
 		unseenTestCertificateCount.value = store.unseenTestCertificateCount
 	}
 
+	func updateValidityStates(shouldScheduleTimer: Bool = true) {
+		let currentAppConfiguration = appConfiguration.currentAppConfig.value
+		healthCertifiedPersons.value.forEach { healthCertifiedPerson in
+			healthCertifiedPerson.healthCertificates.forEach { healthCertificate in
+				let expirationThresholdInDays = currentAppConfiguration.dgcParameters.expirationThresholdInDays
+				let expiringSoonDate = Calendar.current.date(
+					byAdding: .day,
+					value: -Int(expirationThresholdInDays),
+					to: healthCertificate.expirationDate
+				)
+
+				let signatureVerificationResult = self.signatureVerifying.verify(
+					certificate: healthCertificate.base45,
+					with: self.dscListProvider.signingCertificates.value,
+					and: Date()
+				)
+
+				switch signatureVerificationResult {
+				case .success:
+					if Date() >= healthCertificate.expirationDate {
+						healthCertificate.validityState = .expired
+					} else if let expiringSoonDate = expiringSoonDate, Date() >= expiringSoonDate {
+						healthCertificate.validityState = .expiringSoon
+					} else {
+						healthCertificate.validityState = .valid
+					}
+				case .failure:
+					healthCertificate.validityState = .invalid
+				}
+			}
+		}
+		if shouldScheduleTimer {
+			scheduleTimer()
+		}
+	}
+
+	func validUntilDates(for healthCertificates: [HealthCertificate], signingCertificates: [DCCSigningCertificate]) -> [Date] {
+		let dccValidation = DCCSignatureVerification()
+		return healthCertificates
+			.map { certificate in
+				dccValidation.validUntilDate(certificate: certificate.base45, with: signingCertificates)
+			}
+			.compactMap { result -> Date? in
+				switch result {
+				case let .success(date):
+					return date
+
+				case let .failure(error):
+					Log.error("Error while validating certificate \(error.localizedDescription)")
+					return nil
+				}
+			}
+	}
+
+	func expirationDates(for healthCertificates: [HealthCertificate]) -> [Date] {
+		return healthCertificates.map { $0.expirationDate }
+	}
+
+	@objc
+	func scheduleTimer() {
+		invalidateTimer()
+		guard let fireDate = nextFireDate,
+			fireDate.timeIntervalSinceNow > 0 else {
+			Log.info("no next date in the future found - can't schedule timer")
+			return
+		}
+
+		Log.info("Schedule validity timer in \(fireDate.timeIntervalSinceNow) seconds")
+		nextValidityTimer = Timer.scheduledTimer(withTimeInterval: fireDate.timeIntervalSinceNow, repeats: false) { [weak self] _ in
+			self?.updateValidityStates(shouldScheduleTimer: false)
+			self?.nextValidityTimer = nil
+		}
+
+		// remove old notifications before we subscribe new ones
+		NotificationCenter.default.removeObserver(self, name: UIApplication.didEnterBackgroundNotification, object: nil)
+		NotificationCenter.default.removeObserver(self, name: UIApplication.didBecomeActiveNotification, object: nil)
+
+		// schedule timer updates
+		NotificationCenter.default.addObserver(self, selector: #selector(invalidateTimer), name: UIApplication.didEnterBackgroundNotification, object: nil)
+		NotificationCenter.default.addObserver(self, selector: #selector(scheduleTimer), name: UIApplication.didBecomeActiveNotification, object: nil)
+	}
+
 	// MARK: - Private
 
 	private let store: HealthCertificateStoring
+	private let signatureVerifying: DCCSignatureVerifying
+	private let dscListProvider: DSCListProviding
 	private let client: Client
 	private let appConfiguration: AppConfigurationProviding
-	private let digitalGreenCertificateAccess: DigitalGreenCertificateAccessProtocol
+	private let digitalCovidCertificateAccess: DigitalCovidCertificateAccessProtocol
 
 	private var healthCertifiedPersonSubscriptions = Set<AnyCancellable>()
 	private var testCertificateRequestSubscriptions = Set<AnyCancellable>()
@@ -325,20 +437,155 @@ class HealthCertificateService {
 			.store(in: &subscriptions)
 
 		subscribeToNotifications()
+		updateGradients()
+		// Validation Service
+		subscribeAppConfigUpdates()
+		subscribeDSCListChanges()
+
+		updateValidityStates()
 	}
+
+	private func subscribeAppConfigUpdates() {
+		// subscribe app config updates
+		appConfiguration.currentAppConfig
+			.dropFirst()
+			.sink { [weak self] _ in
+				self?.updateValidityStates()
+			}
+			.store(in: &subscriptions)
+	}
+
+	private func subscribeDSCListChanges() {
+		// subscribe to changes of dcc certificates list
+		dscListProvider.signingCertificates
+			.dropFirst()
+			.sink { [weak self] _ in
+				self?.updateValidityStates()
+			}
+			.store(in: &subscriptions)
+	}
+
+	@objc
+	private func invalidateTimer() {
+		Log.info("Invalidate scheduled validity timer")
+		nextValidityTimer?.invalidate()
+		nextValidityTimer = nil
+	}
+
+	#if DEBUG
+	// swiftlint:disable:next cyclomatic_complexity
+	private func configureForLaunchArguments() {
+		if LaunchArguments.healthCertificate.firstHealthCertificate.boolValue {
+			registerHealthCertificate(base45: HealthCertificateMocks.firstBase45Mock)
+		} else if LaunchArguments.healthCertificate.firstAndSecondHealthCertificate.boolValue {
+			registerHealthCertificate(base45: HealthCertificateMocks.firstBase45Mock)
+			registerHealthCertificate(base45: HealthCertificateMocks.lastBase45Mock)
+		}
+
+		if LaunchArguments.healthCertificate.familyCertificates.boolValue {
+			let testCert1 = DigitalCovidCertificateFake.makeBase45Fake(
+				from: DigitalCovidCertificate.fake(
+					name: .fake(familyName: "Schneider", givenName: "Andrea", standardizedFamilyName: "SCHNEIDER", standardizedGivenName: "ANDREA"),
+					testEntries: [TestEntry.fake(dateTimeOfSampleCollection: "2021-04-12T16:01:00Z")]
+				),
+				and: CBORWebTokenHeader.fake()
+			)
+			if case let .success(base45) = testCert1 {
+				registerHealthCertificate(base45: base45)
+			}
+			let testCert2 = DigitalCovidCertificateFake.makeBase45Fake(
+				from: DigitalCovidCertificate.fake(
+					name: .fake(familyName: "Schneider", givenName: "Toni", standardizedFamilyName: "SCHNEIDER", standardizedGivenName: "TONI"),
+					testEntries: [TestEntry.fake(dateTimeOfSampleCollection: "2021-04-12T17:01:00Z")]
+				),
+				and: CBORWebTokenHeader.fake()
+			)
+			if case let .success(base45) = testCert2 {
+				registerHealthCertificate(base45: base45)
+			}
+			let testCert3 = DigitalCovidCertificateFake.makeBase45Fake(
+				from: DigitalCovidCertificate.fake(
+					name: .fake(familyName: "Schneider", givenName: "Victoria", standardizedFamilyName: "SCHNEIDER", standardizedGivenName: "VICTORIA"),
+					testEntries: [TestEntry.fake(dateTimeOfSampleCollection: "2021-04-13T18:01:00Z")]
+				),
+				and: CBORWebTokenHeader.fake()
+			)
+			if case let .success(base45) = testCert3 {
+				registerHealthCertificate(base45: base45)
+			}
+			let testCert4 = DigitalCovidCertificateFake.makeBase45Fake(
+				from: DigitalCovidCertificate.fake(
+					name: .fake(familyName: "Schneider", givenName: "Thomas", standardizedFamilyName: "SCHNEIDER", standardizedGivenName: "THOMAS"),
+					testEntries: [TestEntry.fake(dateTimeOfSampleCollection: "2021-04-15T12:01:00Z")]
+				),
+				and: CBORWebTokenHeader.fake()
+			)
+			if case let .success(base45) = testCert4 {
+				registerHealthCertificate(base45: base45)
+			}
+		}
+		if LaunchArguments.healthCertificate.testCertificateRegistered.boolValue {
+			let result = DigitalCovidCertificateFake.makeBase45Fake(
+				from: DigitalCovidCertificate.fake(
+					name: .fake(familyName: "Schneider", givenName: "Andrea", standardizedFamilyName: "SCHNEIDER", standardizedGivenName: "ANDREA"),
+					testEntries: [TestEntry.fake(dateTimeOfSampleCollection: "2021-04-12T16:01:00Z")]
+				),
+				and: CBORWebTokenHeader.fake()
+			)
+			if case let .success(base45) = result {
+				registerHealthCertificate(base45: base45)
+			}
+		}
+
+		if LaunchArguments.healthCertificate.recoveryCertificateRegistered.boolValue {
+			let result = DigitalCovidCertificateFake.makeBase45Fake(
+				from: DigitalCovidCertificate.fake(
+					name: .fake(familyName: "Schneider", givenName: "Andrea", standardizedFamilyName: "SCHNEIDER", standardizedGivenName: "ANDREA"),
+					recoveryEntries: [
+					 RecoveryEntry.fake()
+				 ]
+			 ),
+				and: CBORWebTokenHeader.fake()
+			)
+			if case let .success(base45) = result {
+				registerHealthCertificate(base45: base45)
+			}
+		}
+	}
+	#endif
 
 	private func updateHealthCertifiedPersonSubscriptions(for healthCertifiedPersons: [HealthCertifiedPerson]) {
 		healthCertifiedPersonSubscriptions = []
 
 		healthCertifiedPersons.forEach { healthCertifiedPerson in
 			healthCertifiedPerson.objectDidChange
-				.sink { [weak self] _ in
+				.sink { [weak self] healthCertifiedPerson in
 					guard let self = self else { return }
-					// Trigger publisher to inform subscribers and update store
-					self.healthCertifiedPersons.value = self.healthCertifiedPersons.value
+
+					if healthCertifiedPerson.isPreferredPerson {
+						// Set isPreferredPerson = false on all other persons to only have one preferred person
+						self.healthCertifiedPersons.value
+							.filter { $0 != healthCertifiedPerson }
+							.forEach {
+								$0.isPreferredPerson = false
+							}
+					}
+
+					self.healthCertifiedPersons.value = self.healthCertifiedPersons.value.sorted()
+					self.updateGradients()
+					self.updateValidityStates()
 				}
 				.store(in: &healthCertifiedPersonSubscriptions)
 		}
+	}
+
+	private func updateGradients() {
+		let gradientTypes: [GradientView.GradientType] = [.lightBlue(withStars: true), .mediumBlue(withStars: true), .darkBlue(withStars: true)]
+		self.healthCertifiedPersons.value
+			.enumerated()
+			.forEach { index, person in
+				person.gradientType = gradientTypes[index % 3]
+			}
 	}
 
 	private func updateTestCertificateRequestSubscriptions(for testCertificateRequests: [TestCertificateRequest]) {
@@ -432,7 +679,7 @@ class HealthCertificateService {
 
 		do {
 			let decodedDEK = try rsaKeyPair.decrypt(encryptedDEKData)
-			let result = digitalGreenCertificateAccess.convertToBase45(from: encryptedCOSE, with: decodedDEK)
+			let result = digitalCovidCertificateAccess.convertToBase45(from: encryptedCOSE, with: decodedDEK)
 
 			switch result {
 			case .success(let healthCertificateBase45):
@@ -466,4 +713,5 @@ class HealthCertificateService {
 		}
 	}
 
+	// swiftlint:disable:next file_length
 }

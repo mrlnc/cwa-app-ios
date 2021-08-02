@@ -44,7 +44,8 @@ extension ExposureNotificationError: ExposureSubmissionErrorTransformable {
 		switch self {
 		case .exposureNotificationRequired,
 			 .exposureNotificationAuthorization,
-			 .exposureNotificationUnavailable:
+			 .exposureNotificationUnavailable,
+			 .notResponding:
 			return .enNotEnabled
 		case .apiMisuse, .unknown:
 			return .other("ENErrorCodeAPIMisuse")
@@ -103,6 +104,8 @@ extension URLSessionError: ExposureSubmissionErrorTransformable {
 			return .fakeResponse
 		case .malformedDateOfBirthKey:
 			return .malformedDateOfBirthKey
+		case .invalidRequest:
+			return .invalidRequest
 		}
 	}
 	// swiftlint:enable cyclomatic_complexity

@@ -143,11 +143,11 @@ final class HTTPClient: Client {
 					return
 				}
 				do {
-					let response = try JSONDecoder().decode(
+					let testResultResponse = try JSONDecoder().decode(
 						FetchTestResultResponse.self,
 						from: testResultResponseData
 					)
-					completeWith(.success(response))
+					completeWith(.success(testResultResponse))
 				} catch {
 					Log.error("Failed to get test result with invalid response payload structure", log: .api)
 					completeWith(.failure(.invalidResponse))
@@ -306,7 +306,12 @@ final class HTTPClient: Client {
 				}
 			case let .failure(error):
 				Log.error("Failed to authorize OTP due to error: \(error).", log: .api)
-				completion(.failure(.invalidResponseError))
+				switch error {
+				case .noNetworkConnection:
+					completion(.failure(.noNetworkConnection))
+				default:
+					completion(.failure(.invalidResponseError))
+				}
 			}
 		})
 	}
@@ -614,7 +619,102 @@ final class HTTPClient: Client {
 			}
 		})
 	}
-
+	
+	func validationOnboardedCountries(
+		eTag: String? = nil,
+		isFake: Bool = false,
+		completion: @escaping ValidationOnboardedCountriesCompletionHandler
+	) {
+		guard let request = try? URLRequest.validationOnboardedCountriesRequest(
+				configuration: configuration,
+				eTag: eTag,
+				headerValue: isFake ? 1 : 0) else {
+			Log.error("Could not create url request for onboarded countries", log: .api)
+			completion(.failure(.invalidRequest))
+			return
+		}
+		
+		session.response(for: request, completion: { result in
+			switch result {
+			case let .success(response):
+				switch response.statusCode {
+				case 200:
+					guard let body = response.body else {
+						Log.error("Could not get body from response", log: .api)
+						completion(.failure(.invalidResponse))
+						return
+					}
+					guard let sapPackage = SAPDownloadedPackage(compressedData: body) else {
+						Log.error("Could not create sapPackage", log: .api)
+						completion(.failure(.invalidResponse))
+						return
+					}
+					let etag = response.httpResponse.value(forCaseInsensitiveHeaderField: "ETag")
+					let packageDownloadResponse = PackageDownloadResponse(package: sapPackage, etag: etag)
+					Log.info("Successfully got list of onboarded countries", log: .api)
+					completion(.success(packageDownloadResponse))
+				case 304:
+					Log.info("Content was not modified - 304.", log: .api)
+					completion(.failure(.notModified))
+				default:
+					Log.error("General server error.", log: .api)
+					completion(.failure(.serverError(response.statusCode)))
+				}
+			case let .failure(error):
+				Log.error("Failure at GET for list of onboarded countries.", log: .api, error: error)
+				completion(.failure(error))
+			}
+		})
+	}
+	
+	func getDCCRules(
+		eTag: String? = nil,
+		isFake: Bool = false,
+		ruleType: HealthCertificateValidationRuleType,
+		completion: @escaping DCCRulesCompletionHandler
+	) {
+		guard let request = try? URLRequest.dccRulesRequest(
+				ruleType: ruleType,
+				configuration: configuration,
+				eTag: eTag,
+				headerValue: isFake ? 1 : 0) else {
+			Log.error("Could not create url request for rule type: \(ruleType)", log: .api)
+			completion(.failure(.invalidRequest))
+			return
+		}
+		
+		session.response(for: request, completion: { result in
+			switch result {
+			case let .success(response):
+				switch response.statusCode {
+				case 200:
+					guard let body = response.body else {
+						Log.error("Could not get body from response", log: .api)
+						completion(.failure(.invalidResponse))
+						return
+					}
+					guard let sapPackage = SAPDownloadedPackage(compressedData: body) else {
+						Log.error("Could not create sapPackage", log: .api)
+						completion(.failure(.invalidResponse))
+						return
+					}
+					let etag = response.httpResponse.value(forCaseInsensitiveHeaderField: "ETag")
+					let packageDownloadResponse = PackageDownloadResponse(package: sapPackage, etag: etag)
+					Log.info("Successfully got rules for ruleType: \(ruleType)", log: .api)
+					completion(.success(packageDownloadResponse))
+				case 304:
+					Log.info("Content was not modified - 304.", log: .api)
+					completion(.failure(.notModified))
+				default:
+					Log.error("General server error.", log: .api)
+					completion(.failure(.serverError(response.statusCode)))
+				}
+			case let .failure(error):
+				Log.error("Failure at GET for rules of type: \(ruleType).", log: .api, error: error)
+				completion(.failure(.invalidResponse))
+			}
+		})
+	}
 
 	// MARK: - Public
 
@@ -1042,7 +1142,7 @@ private extension URLRequest {
 		// Create body.
 		var originalBody: [String: String] = [:]
 		if let dateOfBirthKey = dateOfBirthKey {
-			originalBody = ["key": key, "keyDOB": dateOfBirthKey, "keyType": type]
+			originalBody = ["key": key, "keyDob": dateOfBirthKey, "keyType": type]
 		} else {
 			originalBody = ["key": key, "keyType": type]
 		}
@@ -1324,6 +1424,106 @@ private extension URLRequest {
 		return request
 	}
 	
+	static func validationOnboardedCountriesRequest(
+		configuration: HTTPClient.Configuration,
+		eTag: String?,
+		headerValue: Int
+	) throws -> URLRequest {
+		
+		var request = URLRequest(url: configuration.validationOnboardedCountriesURL)
+		
+		if let eTag = eTag {
+			request.setValue(
+				eTag,
+				forHTTPHeaderField: "If-None-Match"
+			)
+		}
+		
+		request.setValue(
+			"\(headerValue)",
+			// Requests with a value of "0" will be fully processed.
+			// Any other value indicates that this request shall be
+			// handled as a fake request." ,
+			forHTTPHeaderField: "cwa-fake"
+		)
+		
+		// Add header padding.
+		request.setValue(
+			String.getRandomString(of: 14),
+			forHTTPHeaderField: "cwa-header-padding"
+		)
+		
+		request.httpMethod = HttpMethod.get
+	
+		return request
+	}
+	
+	static func dccRulesRequest(
+		ruleType: HealthCertificateValidationRuleType,
+		configuration: HTTPClient.Configuration,
+		eTag: String?,
+		headerValue: Int
+	) throws -> URLRequest {
+		
+		var request = URLRequest(url: configuration.dccRulesURL(rulePath: ruleType.urlPath))
+		
+		if let eTag = eTag {
+			request.setValue(
+				eTag,
+				forHTTPHeaderField: "If-None-Match"
+			)
+		}
+		
+		request.setValue(
+			"\(headerValue)",
+			// Requests with a value of "0" will be fully processed.
+			// Any other value indicates that this request shall be
+			// handled as a fake request." ,
+			forHTTPHeaderField: "cwa-fake"
+		)
+		
+		// Add header padding.
+		request.setValue(
+			String.getRandomString(of: 14),
+			forHTTPHeaderField: "cwa-header-padding"
+		)
+		
+		request.httpMethod = HttpMethod.get
+	
+		return request
+	}
+
+	static func dscListRequest(
+		configuration: HTTPClient.Configuration,
+		eTag: String?,
+		headerValue: Int
+	) -> URLRequest {
+		var request = URLRequest(url: configuration.DSCListURL)
+
+		if let eTag = eTag {
+			request.setValue(
+				eTag,
+				forHTTPHeaderField: "If-None-Match"
+			)
+		}
+		request.setValue(
+			"\(headerValue)",
+			// Requests with a value of "0" will be fully processed.
+			// Any other value indicates that this request shall be
+			// handled as a fake request." ,
+			forHTTPHeaderField: "cwa-fake"
+		)
+
+		// Add header padding.
+		request.setValue(
+			String.getRandomString(of: 14),
+			forHTTPHeaderField: "cwa-header-padding"
+		)
+
+		request.httpMethod = HttpMethod.get
+		return request
+	}
+
 	// MARK: - Helper methods for adding padding to the requests.
 	
 	/// This method recreates the request body with a padding that consists of a random string.

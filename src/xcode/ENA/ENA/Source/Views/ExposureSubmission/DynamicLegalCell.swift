@@ -38,6 +38,7 @@ class DynamicLegalCell: UITableViewCell {
 		// 'bulletized' strings
 		let textBlocks = bulletPoints?.map({ $0.bulletPointString(bulletPointFont: label.font) }) ?? []
 		configure(title: title, description: description, textBlocks: textBlocks, accessibilityIdentifier: accessibilityIdentifier)
+		
 	}
 
 	/// Configure the cell to show a list of bullet points.

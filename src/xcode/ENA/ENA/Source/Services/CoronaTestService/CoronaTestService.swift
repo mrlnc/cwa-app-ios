@@ -475,6 +475,7 @@ class CoronaTestService {
 	private let appConfiguration: AppConfigurationProviding
 	private let healthCertificateService: HealthCertificateService
 	private let notificationCenter: UserNotificationCenter
+	private let serialQueue = AsyncOperation.serialQueue(named: "CoronaTestService.serialQueue")
 
 	private let fakeRequestService: FakeRequestService
 	private let warnOthersReminder: WarnOthersReminder
@@ -594,8 +595,8 @@ class CoronaTestService {
 		case .antigen:
 			antigenTestResultIsLoading = true
 		}
-
-		client.getTestResult(forDevice: registrationToken, isFake: false) { [weak self] result in
+		
+		let operation = CoronaTestResultOperation(client: client, registrationToken: registrationToken) { [weak self] result in
 			guard let self = self else { return }
 
 			switch coronaTestType {
@@ -654,13 +655,17 @@ class CoronaTestService {
 
 				Log.info("[CoronaTestService] Got test result (coronaTestType: \(coronaTestType), testResult: \(testResult)), sampleCollectionDate: \(String(describing: response.sc))", log: .api)
 				var updatedSampleCollectionDate: Date?
+
 				switch coronaTestType {
 				case .pcr:
 					Analytics.collect(.testResultMetadata(.updateTestResult(testResult, registrationToken, .pcr)))
+					
 					self.pcrTest?.testResult = testResult
 				case .antigen:
 					Analytics.collect(.testResultMetadata(.updateTestResult(testResult, registrationToken, .antigen)))
+
 					self.antigenTest?.testResult = testResult
+
 					updatedSampleCollectionDate = response.sc.map {
 						Date(timeIntervalSince1970: TimeInterval($0))
 					}
@@ -669,7 +674,7 @@ class CoronaTestService {
 
 				switch testResult {
 				case .positive, .negative, .invalid:
-					if case .positive = testResult, !coronaTest.keysSubmitted {
+					if case .positive = testResult, let coronaTest = self.coronaTest(ofType: coronaTestType), !coronaTest.keysSubmitted {
 						self.createKeySubmissionMetadataDefaultValues(for: coronaTest)
 					}
 
@@ -694,7 +699,7 @@ class CoronaTestService {
 
 					}
 
-					if coronaTest.finalTestResultReceivedDate == nil {
+					if self.coronaTest(ofType: coronaTestType)?.finalTestResultReceivedDate == nil {
 						switch coronaTestType {
 						case .pcr:
 							self.pcrTest?.finalTestResultReceivedDate = Date()
@@ -707,7 +712,8 @@ class CoronaTestService {
 								coronaTestType: coronaTestType,
 								registrationToken: registrationToken,
 								registrationDate: registrationDate,
-								retryExecutionIfCertificateIsPending: true
+								retryExecutionIfCertificateIsPending: true,
+								labId: response.labId
 							)
 
 							switch coronaTestType {
@@ -756,6 +762,8 @@ class CoronaTestService {
 				}
 			}
 		}
+
+		serialQueue.addOperation(operation)
 	}
 
 	private func setupOutdatedPublisher(for antigenTest: AntigenTest) {
@@ -769,7 +777,7 @@ class CoronaTestService {
 				let hoursToDeemTestOutdated = $0.coronaTestParameters.coronaRapidAntigenTestParameters.hoursToDeemTestOutdated
 				guard
 					hoursToDeemTestOutdated != 0,
-					let outdatedDate = Calendar.current.date(byAdding: .hour, value: Int(hoursToDeemTestOutdated), to: antigenTest.pointOfCareConsentDate)
+					let outdatedDate = Calendar.current.date(byAdding: .hour, value: Int(hoursToDeemTestOutdated), to: antigenTest.testDate)
 				else {
 					return
 				}

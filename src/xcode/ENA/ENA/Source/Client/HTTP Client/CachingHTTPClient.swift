@@ -4,7 +4,9 @@
 
 import Foundation
 
-class CachingHTTPClient: AppConfigurationFetching, StatisticsFetching, QRCodePosterTemplateFetching, VaccinationValueSetsFetching {
+typealias StatisticsGroupIdentifier = String
+
+class CachingHTTPClient: AppConfigurationFetching, StatisticsFetching, LocalStatisticsFetching, QRCodePosterTemplateFetching, VaccinationValueSetsFetching, DSCListFetching {
 
 	private let environmentProvider: EnvironmentProviding
 
@@ -50,7 +52,10 @@ class CachingHTTPClient: AppConfigurationFetching, StatisticsFetching, QRCodePos
 	/// - Parameters:
 	///   - etag: an optional ETag to download only versions that differ the given tag
 	///   - completion: result handler
-	func fetchAppConfiguration(etag: String? = nil, completion: @escaping AppConfigResultHandler) {
+	func fetchAppConfiguration(
+		etag: String? = nil,
+		completion: @escaping AppConfigResultHandler
+	) {
 		// Manual ETagging because we don't use native cache
 		var headers: [String: String]?
 		if let etag = etag {
@@ -84,7 +89,14 @@ class CachingHTTPClient: AppConfigurationFetching, StatisticsFetching, QRCodePos
 
 	// MARK: - StatisticsFetching
 
-	func fetchStatistics(etag: String?, completion: @escaping StatisticsFetchingResultHandler) {
+	/// Fetches statistics
+	/// - Parameters:
+	///   - etag: an optional ETag to download only versions that differ the given tag
+	///   - completion: result handler
+	func fetchStatistics(
+		etag: String?,
+		completion: @escaping StatisticsFetchingResultHandler
+	) {
 		// Manual ETagging because we don't use native cache
 		var headers: [String: String]?
 		if let etag = etag {
@@ -145,6 +157,10 @@ class CachingHTTPClient: AppConfigurationFetching, StatisticsFetching, QRCodePos
 	
 	// MARK: VaccinationValueSetsFetching
 	
+	/// Fetches vaccination value sets
+	/// - Parameters:
+	///   - etag: an optional ETag to download only versions that differ the given tag
+	///   - completion: result handler
 	func fetchVaccinationValueSets(
 		etag: String?,
 		completion: @escaping VaccinationValueSetsCompletionHandler
@@ -155,9 +171,9 @@ class CachingHTTPClient: AppConfigurationFetching, StatisticsFetching, QRCodePos
 			headers = ["If-None-Match": etag]
 		}
 
-		session.GET(configuration.vaccinationValueSets, extraHeaders: headers) { result in
+		session.GET(configuration.vaccinationValueSetsURL, extraHeaders: headers) { result in
 			switch result {
-			case .success(let response):
+			case let .success(response):
 				do {
 					let package = try self.verifyPackage(in: response)
 					let vaccinationValueSetsData = try SAP_Internal_Dgc_ValueSets(serializedData: package.bin)
@@ -173,6 +189,80 @@ class CachingHTTPClient: AppConfigurationFetching, StatisticsFetching, QRCodePos
 			}
 		}
 	}
+
+	// MARK: Protocol DSCListFetching
+
+	/// Fetches lis of DSC certificates
+	/// - Parameters:
+	///   - etag: an optional ETag to download only versions that differ the given tag
+	///   - completion: result handler
+	func fetchDSCList(
+		etag: String?,
+		completion: @escaping DSCListCompletionHandler
+	) {
+		// Manual ETagging because we don't use native cache
+		var headers: [String: String]?
+		if let etag = etag {
+			headers = ["If-None-Match": etag]
+		}
+
+		session.GET(configuration.DSCListURL, extraHeaders: headers) { result in
+			switch result {
+			case let .success(response):
+				do {
+					let package = try self.verifyPackage(in: response)
+					let DSCList = try SAP_Internal_Dgc_DscList(serializedData: package.bin)
+					let responseETag = response.httpResponse.value(forCaseInsensitiveHeaderField: "ETag")
+					let dscListResponse = DSCListResponse(dscList: DSCList, eTag: responseETag)
+					Log.info("Received DSCList \(try DSCList.jsonString())", log: .vaccination)
+					completion(.success(dscListResponse))
+				} catch {
+					Log.error("Failed to unpack / parse data from the response to expected data structure", log: .api)
+					completion(.failure(error))
+				}
+			case .failure(let error):
+				completion(.failure(error))
+			}
+		}
+	}
+
+	// MARK: LocalStatisticsFetching
+	
+	/// Fetches local statistics
+	/// - Parameters:
+	///   - groupID: string to pass group ID to the API to get local statistics
+	///   - etag: an optional ETag to download only versions that differ the given tag
+	///   - completion: result handler
+	func fetchLocalStatistics(
+		groupID: StatisticsGroupIdentifier,
+		eTag: String?,
+		completion: @escaping LocalStatisticsCompletionHandler
+	) {
+		// Manual ETagging because we don't use native cache
+		var headers: [String: String]?
+		if let eTag = eTag {
+			headers = ["If-None-Match": eTag]
+		}
+
+		let url = configuration.localStatisticsURL(groupID: groupID)
+		session.GET(url, extraHeaders: headers) { result in
+			switch result {
+			case .success(let response):
+				do {
+					let package = try self.verifyPackage(in: response)
+					let localStatistics = try SAP_Internal_Stats_LocalStatistics(serializedData: package.bin)
+					let responseETag = response.httpResponse.value(forCaseInsensitiveHeaderField: "ETag")
+					let localStatisticsResponse = LocalStatisticsResponse(localStatistics, responseETag, groupID)
+					completion(.success(localStatisticsResponse))
+				} catch {
+					completion(.failure(error))
+				}
+			case .failure(let error):
+				completion(.failure(error))
+			}
+		}
+	}
+	
 	// MARK: - Helpers
 
 	private func verifyPackage(in response: URLSession.Response) throws -> SAPDownloadedPackage {
